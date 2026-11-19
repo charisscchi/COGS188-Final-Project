@@ -1,8 +1,103 @@
+from collections.abc import Callable
+from dataclasses import dataclass
+from datetime import datetime
+from typing import Literal
 
-from routing import astar
-from traffic_aware import build_graph
 from candidate_routes import generate_candidate_routes
-from epsilon_greedy import EpsilonGreedy
+from epsilon_greedy import EpsilonGreedy, RouteID
+from road_network import Endpoint, RoadNetwork, RoadPosition, SearchNode, build_road_query
+from routing import astar
+from traffic_aware import TrafficDiagnostics, TrafficSnapshot, normalize_time, routing_speeds
+
+
+RoutingMethod = Literal["static", "traffic_aware", "epsilon_greedy"]
+TrafficProvider = Callable[[datetime], TrafficSnapshot]
+PickupHeuristic = Callable[[RoadPosition, RoadPosition], float]
+
+
+@dataclass(frozen=True)
+class RouteOption:
+    road_ids: RouteID
+    estimated_time_s: float
+
+
+@dataclass(frozen=True)
+class RoutingResult:
+    method: RoutingMethod
+    status: Literal["ok", "unreachable"]
+    road_ids: RouteID | None
+    estimated_time_s: float | None
+    candidates: tuple[RouteOption, ...]
+    diagnostics: TrafficDiagnostics
+
+
+def plan_route(
+    network: RoadNetwork,
+    start_road_id: str,
+    pickup_road_id: str,
+    *,
+    request_time: datetime,
+    method: RoutingMethod,
+    start_position_m: float | None = None,
+    pickup_position_m: float | None = None,
+    traffic: TrafficSnapshot | TrafficProvider | None = None,
+    vehicle_class: str = "passenger",
+    heuristic: PickupHeuristic | None = None,
+    k: int = 3,
+    bandit: EpsilonGreedy | None = None,
+) -> RoutingResult:
+    """Plan one pickup. Invalid inputs raise ValueError.
+
+    A heuristic receives the current position and the specific pickup position.
+    The caller must establish that it lower-bounds remaining estimated seconds
+    for this query's costs. The default zero heuristic is Dijkstra-equivalent.
+    """
+    if method not in ("static", "traffic_aware", "epsilon_greedy"):
+        raise ValueError(f"Unknown routing method {method!r}.")
+    if method == "epsilon_greedy" and bandit is None:
+        raise ValueError("Supply an EpsilonGreedy agent for the recurring pickup context.")
+    requested = normalize_time(request_time)
+    start = network.position(start_road_id, start_position_m)
+    pickup = network.position(pickup_road_id, pickup_position_m, at_end=True)
+    if callable(traffic):
+        snapshot = traffic(requested)
+        if not isinstance(snapshot, TrafficSnapshot):
+            raise ValueError("Traffic provider must return a TrafficSnapshot.")
+    else:
+        snapshot = traffic
+    if snapshot is not None:
+        if not isinstance(snapshot, TrafficSnapshot) or snapshot.request_time != requested:
+            raise ValueError("Traffic provider must return a snapshot for this request time.")
+    speeds, diagnostics = routing_speeds(network, snapshot, use_traffic=method != "static")
+    query = build_road_query(network, start, pickup, speeds, vehicle_class)
+
+    if method == "epsilon_greedy":
+        paths = generate_candidate_routes(query.graph, Endpoint.START, Endpoint.PICKUP, k)
+        candidates = tuple(
+            RouteOption(road_ids, query.travel_time(road_ids))
+            for road_ids in map(query.road_ids, paths)
+        )
+        if not candidates:
+            return RoutingResult(method, "unreachable", None, None, (), diagnostics)
+        bandit.set_candidates(option.road_ids for option in candidates)
+        chosen = candidates[bandit.choose_route()]
+        return RoutingResult(method, "ok", chosen.road_ids, chosen.estimated_time_s, candidates, diagnostics)
+
+    if heuristic is not None and not callable(heuristic):
+        raise ValueError("Use a callable for the pickup heuristic.")
+
+    def estimate(state: SearchNode) -> float:
+        if heuristic is None or state == Endpoint.PICKUP:
+            return 0.0
+        position = RoadPosition(state, 0.0) if isinstance(state, str) else start
+        return heuristic(position, pickup)
+
+    path, cost = astar(
+        query.graph, Endpoint.START, Endpoint.PICKUP, estimate if heuristic is not None else None,
+    )
+    if path is None:
+        return RoutingResult(method, "unreachable", None, None, (), diagnostics)
+    return RoutingResult(method, "ok", query.road_ids(path), cost, (), diagnostics)
 
 
 def prepare_routes(
@@ -29,14 +124,6 @@ def prepare_routes(
         and candidate routes for epsilon-greedy.
     """
 
-    # Zero heuristic is a safe fallback when
-    # geographical coordinates are unavailable.
-    if heuristic is None:
-        heuristic = {
-            node: 0.0
-            for node in static_graph
-        }
-
     static_path, static_cost = astar(
         static_graph, start, goal, heuristic
     )
@@ -59,6 +146,7 @@ def prepare_routes(
 
 
 if __name__ == "__main__":
+    from traffic_aware import build_graph
 
     # Controlled example road network
     roads = [
