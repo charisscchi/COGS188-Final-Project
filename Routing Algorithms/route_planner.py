@@ -1,7 +1,8 @@
-from collections.abc import Callable
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Literal
+from numbers import Integral
+from typing import Literal, Protocol
 
 from candidate_routes import generate_candidate_routes
 from epsilon_greedy import EpsilonGreedy, RouteID
@@ -13,6 +14,14 @@ from traffic_aware import TrafficDiagnostics, TrafficSnapshot, normalize_time, r
 RoutingMethod = Literal["static", "traffic_aware", "epsilon_greedy"]
 TrafficProvider = Callable[[datetime], TrafficSnapshot]
 PickupHeuristic = Callable[[RoadPosition, RoadPosition], float]
+
+
+class RouteSelector(Protocol):
+    """Select an index after receiving the available routes in traffic rank order."""
+
+    def set_candidates(self, routes: Iterable[Sequence[str]]) -> None: ...
+
+    def choose_route(self) -> int: ...
 
 
 @dataclass(frozen=True)
@@ -44,7 +53,7 @@ def plan_route(
     vehicle_class: str = "passenger",
     heuristic: PickupHeuristic | None = None,
     k: int = 3,
-    bandit: EpsilonGreedy | None = None,
+    bandit: RouteSelector | None = None,
 ) -> RoutingResult:
     """Plan one pickup. Invalid inputs raise ValueError.
 
@@ -55,7 +64,7 @@ def plan_route(
     if method not in ("static", "traffic_aware", "epsilon_greedy"):
         raise ValueError(f"Unknown routing method {method!r}.")
     if method == "epsilon_greedy" and bandit is None:
-        raise ValueError("Supply an EpsilonGreedy agent for the recurring pickup context.")
+        raise ValueError("Supply a route selector for the recurring pickup context.")
     requested = normalize_time(request_time)
     start = network.position(start_road_id, start_position_m)
     pickup = network.position(pickup_road_id, pickup_position_m, at_end=True)
@@ -80,7 +89,10 @@ def plan_route(
         if not candidates:
             return RoutingResult(method, "unreachable", None, None, (), diagnostics)
         bandit.set_candidates(option.road_ids for option in candidates)
-        chosen = candidates[bandit.choose_route()]
+        index = bandit.choose_route()
+        if isinstance(index, bool) or not isinstance(index, Integral) or not 0 <= index < len(candidates):
+            raise ValueError("Route selector must return a valid candidate index.")
+        chosen = candidates[index]
         return RoutingResult(method, "ok", chosen.road_ids, chosen.estimated_time_s, candidates, diagnostics)
 
     if heuristic is not None and not callable(heuristic):

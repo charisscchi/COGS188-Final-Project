@@ -1,0 +1,80 @@
+{
+  "label": "preliminary synthetic",
+  "experiment_id": "synthetic-8074b600213b",
+  "configuration": {
+    "seeds": [
+      11,
+      22,
+      33,
+      44,
+      55
+    ],
+    "train_episodes": 119,
+    "validation_scenarios": 51,
+    "test_scenarios": 68,
+    "levels": [
+      "free_flow",
+      "light",
+      "moderate",
+      "heavy"
+    ],
+    "epsilons": [
+      0.0,
+      0.05,
+      0.1,
+      0.2,
+      0.5
+    ],
+    "k": 3,
+    "first_candidate": true,
+    "model": {
+      "forecast_noise": 0.18,
+      "realized_speed_noise": 0.22,
+      "max_road_delay_s": 3.0,
+      "max_short_turn_delay_s": 14.0,
+      "missing_probability": 0.2,
+      "hidden_closure_probability": 0.12,
+      "dispatch_delay_s": 2.0,
+      "timeout_s": 65.0
+    }
+  },
+  "chosen_epsilon": 0.2,
+  "validation_criterion": [
+    "highest completion rate",
+    "lowest completed-only mean pickup seconds",
+    "lowest epsilon"
+  ],
+  "split_seeds": {
+    "11": {
+      "train": 7871087955264702756,
+      "validation": 16821256747852485593,
+      "test": 7968091331374298949
+    },
+    "22": {
+      "train": 1373853151831480920,
+      "validation": 5915111676602363003,
+      "test": 18334293337441468280
+    },
+    "33": {
+      "train": 7722270134402302058,
+      "validation": 9132358363979764827,
+      "test": 4530038682129988603
+    },
+    "44": {
+      "train": 11452449754918572542,
+      "validation": 13902763153372728944,
+      "test": 8170680297445735625
+    },
+    "55": {
+      "train": 2341993480944566415,
+      "validation": 10772537825979234266,
+      "test": 15438627422708810259
+    }
+  },
+  "runtime": {
+    "python": "3.14.4",
+    "networkx": "3.7",
+    "pandas": "3.1.1",
+    "matplotlib": "3.11.2"
+  }
+}
