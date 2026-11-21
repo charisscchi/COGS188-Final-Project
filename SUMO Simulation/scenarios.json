@@ -1,0 +1,17 @@
+{
+  "request_s": 60,
+  "timeout_s": 450,
+  "candidate_routes": 3,
+  "epsilons": [0.05, 0.20, 0.50],
+  "split_seeds": {"train": 18801, "validation": 18802, "test": 18803},
+  "requests_per_context": {"train": 10, "validation": 4, "test": 8},
+  "conditions": {
+    "light_demand": {"forecast_factor": 1.0, "actual_range": [1.0, 1.0], "background_range": [6, 10]},
+    "slow_corridor": {"forecast_factor": 0.36, "actual_range": [0.23, 0.49], "background_range": [13, 20]}
+  },
+  "pickups": [
+    {"id": "waverly-bleecker", "start_edge": "5670172#3", "start_m": 12.0, "pickup_edge": "157012386#19", "pickup_m": 32.0, "bottleneck_edges": ["1498960254#1"]},
+    {"id": "laguardia-wooster", "start_edge": "-5672138#4", "start_m": 12.0, "pickup_edge": "1523981210#0", "pickup_m": 32.0, "bottleneck_edges": ["-317400962#3"]},
+    {"id": "spring-bleecker", "start_edge": "1476186352#1", "start_m": 12.0, "pickup_edge": "727649619#0", "pickup_m": 32.0, "bottleneck_edges": ["420358898#1"]}
+  ]
+}
